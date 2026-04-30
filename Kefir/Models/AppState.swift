@@ -39,6 +39,16 @@ class AppState: ObservableObject {
     // MARK: - Private Properties
     private var pollingTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    /// Watchdog that detects when the polling stream has gone silent (e.g.,
+    /// because we lost network access and SwiftKEF's polling loop is
+    /// retrying internally without ever surfacing the error).
+    private var watchdogTask: Task<Void, Never>?
+    private var lastPollingEventDate = Date()
+    /// Maximum tolerated silence between polling events. The KEF polling
+    /// queue returns at least an empty event every `pollInterval` seconds
+    /// even when nothing is changing, so going much longer than that
+    /// without an event indicates the connection is broken.
+    private let pollingFreshnessTimeout: TimeInterval = 25
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
@@ -102,6 +112,7 @@ class AppState: ObservableObject {
     deinit {
         pollingTask?.cancel()
         reconnectTask?.cancel()
+        watchdogTask?.cancel()
     }
     
     // MARK: - Configuration
@@ -121,8 +132,9 @@ class AppState: ObservableObject {
         log.info("selectSpeaker name=\(profile.name, privacy: .public) host=\(profile.host, privacy: .public) silent=\(silent)")
         currentSpeaker = profile
 
-        // Stop current polling and any pending reconnect
+        // Stop current polling, watchdog and any pending reconnect
         pollingTask?.cancel()
+        watchdogTask?.cancel()
         reconnectTask?.cancel()
 
         do {
@@ -242,6 +254,9 @@ class AppState: ObservableObject {
     
     private func startPolling() {
         pollingTask?.cancel()
+        watchdogTask?.cancel()
+        lastPollingEventDate = Date()
+        startWatchdog()
 
         pollingTask = Task {
             guard let eventStream = await connection.startPolling(
@@ -252,6 +267,7 @@ class AppState: ObservableObject {
             do {
                 for try await event in eventStream {
                     if Task.isCancelled { break }
+                    lastPollingEventDate = Date()
 
                     // Detect a transition into powerOn so we can fetch the
                     // current source/volume/etc. The KEF polling queue does
@@ -279,6 +295,30 @@ class AppState: ObservableObject {
                 if !Task.isCancelled {
                     log.warning("Polling stream ended with error: \(error.localizedDescription, privacy: .public)")
                     await handleTransientFailure()
+                }
+            }
+        }
+    }
+
+    /// Detects when the polling stream goes silent without surfacing an error.
+    /// SwiftKEF's `startPolling` retries network errors internally with a 2s
+    /// backoff and never finishes the stream — so when the Mac leaves the
+    /// LAN, our `for try await event in eventStream` loop just sits there
+    /// waiting forever and `isConnected` stays true. The watchdog forces a
+    /// health check after `pollingFreshnessTimeout` seconds of silence.
+    private func startWatchdog() {
+        watchdogTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // poll every 5s
+                if Task.isCancelled { return }
+                guard let self = self, self.isConnected else { continue }
+                let silence = Date().timeIntervalSince(self.lastPollingEventDate)
+                if silence > self.pollingFreshnessTimeout {
+                    log.warning("Watchdog: polling silent for \(Int(silence))s. Health-checking.")
+                    await self.handleTransientFailure()
+                    // handleTransientFailure either restarts polling (which
+                    // will start a fresh watchdog) or marks us disconnected.
+                    return
                 }
             }
         }
@@ -413,6 +453,7 @@ class AppState: ObservableObject {
     func cleanup() async {
         pollingTask?.cancel()
         reconnectTask?.cancel()
+        watchdogTask?.cancel()
         await connection.disconnect()
     }
     
