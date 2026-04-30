@@ -80,10 +80,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if popover.isShown {
                 popover.performClose(nil)
             } else {
+                // Activate the app *before* showing the popover so the popover
+                // window can become key and receive mouse/keyboard events.
+                // `NSApp.activate(ignoringOtherApps:)` was deprecated in macOS 14
+                // and is unreliable for `.accessory` apps on newer macOS releases.
+                if #available(macOS 14.0, *) {
+                    NSApp.activate()
+                } else {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                
-                // Activate app to ensure popover gets focus
-                NSApp.activate(ignoringOtherApps: true)
+
+                // Make sure the popover's window is actually key, otherwise
+                // SwiftUI controls inside it won't dispatch click events.
+                popover.contentViewController?.view.window?.makeKey()
             }
         }
     }
