@@ -132,10 +132,16 @@ class AppState: ObservableObject {
         log.info("selectSpeaker name=\(profile.name, privacy: .public) host=\(profile.host, privacy: .public) silent=\(silent)")
         currentSpeaker = profile
 
-        // Stop current polling, watchdog and any pending reconnect
+        // Stop current polling and watchdog. User-initiated selection should
+        // also cancel any pending reconnect. Silent reconnect attempts are
+        // made *from* reconnectTask, so cancelling it here would cancel the
+        // task that is currently executing and can spawn overlapping retries.
         pollingTask?.cancel()
         watchdogTask?.cancel()
-        reconnectTask?.cancel()
+        if !silent {
+            reconnectTask?.cancel()
+            reconnectTask = nil
+        }
 
         do {
             try await connection.connect(to: profile)
@@ -152,8 +158,8 @@ class AppState: ObservableObject {
             isConnected = false
             if !silent {
                 self.error.showConnectionError(error)
+                scheduleReconnect()
             }
-            scheduleReconnect()
         }
     }
     
@@ -232,7 +238,7 @@ class AppState: ObservableObject {
             // A reconnect is already running.
             return
         }
-        reconnectTask = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self = self else { return }
             var delay = Constants.Timing.connectionRetryDelay // 5s
             while !Task.isCancelled {
@@ -246,8 +252,11 @@ class AppState: ObservableObject {
 
                 delay = min(delay * 2, 30)
             }
-            self.reconnectTask = nil
+            if self.reconnectTask?.isCancelled != true {
+                self.reconnectTask = nil
+            }
         }
+        reconnectTask = task
     }
 
     // MARK: - Polling
