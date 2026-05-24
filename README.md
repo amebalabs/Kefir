@@ -51,6 +51,14 @@ Set up keyboard shortcuts for:
 
 ### Installation
 
+#### Homebrew (recommended)
+
+```sh
+brew install --cask melonamin/formulae/kefir
+```
+
+#### Manual
+
 1. Download the latest release from the [Releases](https://github.com/melonamin/Kefir/releases) page
 2. Drag Kefir to your Applications folder
 3. Launch Kefir from Applications
