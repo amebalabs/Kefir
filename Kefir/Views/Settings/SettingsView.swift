@@ -51,8 +51,12 @@ struct SpeakersTab: View {
             VStack(spacing: 0) {
                 List(selection: $selectedSpeaker) {
                     ForEach(appState.speakers) { speaker in
-                        SpeakerRow(speaker: speaker, isSelected: selectedSpeaker?.id == speaker.id)
-                            .tag(speaker)
+                        SpeakerRow(
+                            appState: appState,
+                            speaker: speaker,
+                            isSelected: selectedSpeaker?.id == speaker.id
+                        )
+                        .tag(speaker)
                     }
                 }
                 .listStyle(InsetListStyle())
@@ -109,16 +113,29 @@ struct SpeakersTab: View {
 }
 
 struct SpeakerRow: View {
+    @ObservedObject var appState: AppState
     let speaker: SpeakerProfile
     let isSelected: Bool
-    
+
+    /// Status dot, shown only for the speaker the app is currently using.
+    /// Mirrors the bottom-bar visual language:
+    ///   - green: connected and powered on
+    ///   - orange: connected but in standby
+    ///   - red: connection lost
+    /// Other (non-current) speakers in the list show no dot.
+    private var statusDotColor: Color? {
+        guard appState.currentSpeaker?.id == speaker.id else { return nil }
+        if !appState.isConnected { return .red }
+        return appState.powerStatus == .powerOn ? .green : .orange
+    }
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(speaker.name)
                         .font(.system(size: 13))
-                    
+
                     if speaker.isDefault {
                         Text("DEFAULT")
                             .font(.system(size: 10, weight: .medium))
@@ -129,17 +146,17 @@ struct SpeakerRow: View {
                             .cornerRadius(3)
                     }
                 }
-                
+
                 Text(speaker.host)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
-            if speaker.id == speaker.id { // Check if currently connected
+
+            if let color = statusDotColor {
                 Circle()
-                    .fill(Color.green)
+                    .fill(color)
                     .frame(width: 8, height: 8)
             }
         }
