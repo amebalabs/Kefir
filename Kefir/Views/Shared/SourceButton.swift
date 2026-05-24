@@ -20,14 +20,7 @@ struct SourceButton: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 70)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color(NSColor.separatorColor).opacity(0.5), lineWidth: 1)
-                    )
-            )
+            .glassCard(cornerRadius: 10, tint: isSelected ? .accentColor : nil)
         }
         .buttonStyle(PlainButtonStyle())
         .focusable(false)

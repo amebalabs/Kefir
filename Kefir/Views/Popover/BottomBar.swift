@@ -128,7 +128,7 @@ struct BottomBar: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .background(Color(NSColor.controlBackgroundColor))
+                .glassCard(cornerRadius: 0)
             } else {
                 // Simplified bottom bar when not connected or in standby
                 HStack {
@@ -213,7 +213,7 @@ struct BottomBar: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
-                .background(Color(NSColor.controlBackgroundColor))
+                .glassCard(cornerRadius: 0)
             }
         }
     }

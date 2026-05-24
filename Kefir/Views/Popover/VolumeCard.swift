@@ -33,29 +33,30 @@ struct VolumeCard: View {
             )
             
             // Buttons
-            HStack(spacing: 40) {
-                ControlButton(
-                    icon: "minus",
-                    action: { onAdjust(-5) }
-                )
-                
-                ControlButton(
-                    icon: isMuted ? "speaker.slash.fill" : "speaker.fill",
-                    isLarge: true,
-                    isAccent: isMuted,
-                    action: onMuteToggle
-                )
-                
-                ControlButton(
-                    icon: "plus",
-                    action: { onAdjust(5) }
-                )
+            GlassGroup(spacing: 40) {
+                HStack(spacing: 40) {
+                    ControlButton(
+                        icon: "minus",
+                        action: { onAdjust(-5) }
+                    )
+
+                    ControlButton(
+                        icon: isMuted ? "speaker.slash.fill" : "speaker.fill",
+                        isLarge: true,
+                        isAccent: isMuted,
+                        action: onMuteToggle
+                    )
+
+                    ControlButton(
+                        icon: "plus",
+                        action: { onAdjust(5) }
+                    )
+                }
             }
             .frame(maxWidth: .infinity)
             .focusable(false)
         }
         .padding(20)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .glassCard(cornerRadius: 12)
     }
 }

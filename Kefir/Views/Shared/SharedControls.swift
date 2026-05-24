@@ -1,5 +1,66 @@
 import SwiftUI
 
+// MARK: - Liquid Glass
+
+extension View {
+    /// Applies a Liquid Glass background on macOS 26+, falling back to the
+    /// app's flat control-background card on earlier systems. Keeps call sites
+    /// free of `#available` boilerplate so the look degrades cleanly on 15.x.
+    @ViewBuilder
+    func glassCard(cornerRadius: CGFloat = 12, tint: Color? = nil) -> some View {
+        if #available(macOS 26.0, *) {
+            if let tint {
+                glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            background(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(tint ?? Color(NSColor.controlBackgroundColor))
+            )
+        }
+    }
+
+    /// Circular Liquid Glass backing for round controls (transport/volume
+    /// buttons). On 15.x it falls back to the previous filled-circle look.
+    /// The caller sizes its content with a matching `.frame` before calling.
+    @ViewBuilder
+    func glassCircle(tint: Color? = nil) -> some View {
+        if #available(macOS 26.0, *) {
+            if let tint {
+                glassEffect(.regular.tint(tint).interactive(), in: .circle)
+            } else {
+                glassEffect(.regular.interactive(), in: .circle)
+            }
+        } else {
+            background(
+                Circle()
+                    .fill(tint ?? Color(NSColor.controlBackgroundColor))
+                    .overlay(
+                        Circle()
+                            .stroke(Color(NSColor.separatorColor).opacity(0.5), lineWidth: 1)
+                    )
+            )
+        }
+    }
+}
+
+/// Groups a cluster of glass controls so their shapes blend and morph
+/// together on macOS 26. On earlier systems it renders its content directly.
+struct GlassGroup<Content: View>: View {
+    var spacing: CGFloat = 20
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Modern Slider
 
 struct ModernSlider: View {
@@ -98,19 +159,12 @@ struct ControlButton: View {
     
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(isAccent ? Color.accentColor : Color(NSColor.controlBackgroundColor))
-                    .overlay(
-                        Circle()
-                            .stroke(Color(NSColor.separatorColor).opacity(0.5), lineWidth: 1)
-                    )
-                    .frame(width: isLarge ? 50 : 40, height: isLarge ? 50 : 40)
-                
-                Image(systemName: icon)
-                    .font(.system(size: isLarge ? 22 : 16, weight: .medium))
-                    .foregroundColor(isAccent ? .white : .primary)
-            }
+            Image(systemName: icon)
+                .font(.system(size: isLarge ? 22 : 16, weight: .medium))
+                .foregroundColor(isAccent ? .white : .primary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: isLarge ? 50 : 40, height: isLarge ? 50 : 40)
+                .glassCircle(tint: isAccent ? .accentColor : nil)
         }
         .buttonStyle(PlainButtonStyle())
         .focusable(false)
@@ -128,19 +182,12 @@ struct PlayButton: View {
     
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(size == .large ? Color.accentColor : Color.clear)
-                    .overlay(
-                        Circle()
-                            .stroke(size == .large ? Color.clear : Color(NSColor.separatorColor), lineWidth: 2)
-                    )
-                    .frame(width: size == .large ? 56 : 40, height: size == .large ? 56 : 40)
-                
-                Image(systemName: icon)
-                    .font(.system(size: size == .large ? 22 : 16, weight: .medium))
-                    .foregroundColor(size == .large ? .white : .primary)
-            }
+            Image(systemName: icon)
+                .font(.system(size: size == .large ? 22 : 16, weight: .medium))
+                .foregroundColor(size == .large ? .white : .primary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: size == .large ? 56 : 40, height: size == .large ? 56 : 40)
+                .glassCircle(tint: size == .large ? .accentColor : nil)
         }
         .buttonStyle(PlainButtonStyle())
         .focusable(false)
