@@ -5,7 +5,18 @@ import SwiftUI
 struct ModernSlider: View {
     @Binding var value: Double
     @Binding var isDragging: Bool
-    
+
+    /// Local "in-flight" value while the user is dragging. We avoid writing to
+    /// the binding on every drag delta because the binding's setter triggers an
+    /// async HTTP request to the speaker — doing that 60+ times per second
+    /// (a) spams the speaker and (b) makes the thumb appear stuck because the
+    /// async update hasn't propagated back through `value` yet.
+    @State private var dragValue: Double?
+
+    private var displayValue: Double {
+        dragValue ?? value
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -13,7 +24,7 @@ struct ModernSlider: View {
                 Capsule()
                     .fill(Color(NSColor.separatorColor).opacity(0.3))
                     .frame(height: 6)
-                
+
                 // Fill
                 Capsule()
                     .fill(
@@ -23,8 +34,8 @@ struct ModernSlider: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: geometry.size.width * CGFloat(value / 100), height: 6)
-                
+                    .frame(width: geometry.size.width * CGFloat(displayValue / 100), height: 6)
+
                 // Thumb
                 Circle()
                     .fill(Color.white)
@@ -35,7 +46,7 @@ struct ModernSlider: View {
                             .fill(Color.accentColor)
                             .frame(width: 8, height: 8)
                     )
-                    .offset(x: geometry.size.width * CGFloat(value / 100) - 11)
+                    .offset(x: geometry.size.width * CGFloat(displayValue / 100) - 11)
                     .scaleEffect(isDragging ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
             }
@@ -45,12 +56,32 @@ struct ModernSlider: View {
                     .onChanged { drag in
                         isDragging = true
                         let newValue = min(100, max(0, Double(drag.location.x / geometry.size.width) * 100))
-                        value = newValue
+                        // Only update local state during drag — no HTTP call yet.
+                        dragValue = newValue
                     }
                     .onEnded { _ in
+                        if let final = dragValue {
+                            // Commit the final value to the speaker once. We
+                            // intentionally KEEP dragValue set here so the
+                            // thumb doesn't snap back to the (stale) binding
+                            // value while the async HTTP round-trip catches up.
+                            value = final
+                        }
                         isDragging = false
+                        // Safety net: if the binding never catches up (e.g.,
+                        // HTTP failed or speaker capped the value differently),
+                        // surrender to the binding after a short delay.
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 800_000_000)
+                            dragValue = nil
+                        }
                     }
             )
+            .onChange(of: value) { _, newValue in
+                if let dv = dragValue, abs(dv - newValue) < 1.0 {
+                    dragValue = nil
+                }
+            }
         }
         .frame(height: 22)
         .focusable(false)

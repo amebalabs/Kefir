@@ -220,15 +220,24 @@ class AppState: ObservableObject {
     // MARK: - Control Methods
     
     func setVolume(_ volume: Int) async {
-        await error.performOperation(operation: "Set Volume") {
-            try await self.volume.setVolume(volume, using: self.connection)
+        // Optimistic UI update so the slider thumb stays where the user dragged
+        // it instead of snapping back during the HTTP round-trip.
+        let clamped = max(Constants.Volume.min, min(Constants.Volume.max, volume))
+        let previous = self.currentVolume
+        self.currentVolume = clamped
+        self.volume.currentVolume = clamped
+
+        do {
+            try await self.volume.setVolume(clamped, using: self.connection)
+        } catch {
+            self.currentVolume = previous
+            self.volume.currentVolume = previous
+            self.error.showOperationError(error, operation: "Set Volume")
         }
     }
-    
+
     func adjustVolume(by amount: Int) async {
-        await error.performOperation(operation: "Adjust Volume") {
-            try await self.volume.adjustVolume(by: amount, using: self.connection)
-        }
+        await setVolume(self.currentVolume + amount)
     }
     
     func toggleMute() async {
