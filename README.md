@@ -1,4 +1,4 @@
-![macOS](https://img.shields.io/badge/macOS-13.0%2B-blue)
+![macOS](https://img.shields.io/badge/macOS-14.6%2B-blue)
 [![Swift](https://img.shields.io/badge/Swift-6.1-orange.svg)](https://swift.org)
 [![KEF Compatible](https://img.shields.io/badge/KEF-LSX%20II%20%7C%20LS50%20II%20%7C%20LS60-purple.svg)](https://www.kef.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -45,7 +45,7 @@ Set up keyboard shortcuts for:
 ## Getting Started
 
 ### Requirements
-- macOS 13.0 or later
+- macOS 14.6 or later
 - KEF wireless speakers (LSX II, LS50 Wireless II, or LS60)
 - Speakers and Mac on the same network
 
