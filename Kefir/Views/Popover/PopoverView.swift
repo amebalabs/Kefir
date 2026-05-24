@@ -30,9 +30,20 @@ struct PopoverView: View {
             )
         }
         .frame(width: 400)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(rootBackground)
         .sheet(isPresented: $showingAddSpeaker) {
             AddSpeakerView(appState: appState)
+        }
+    }
+
+    /// Clear on macOS 26 so the Liquid Glass cards refract the popover's
+    /// native backdrop; opaque window background on earlier systems.
+    @ViewBuilder
+    private var rootBackground: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+        } else {
+            Color(NSColor.windowBackgroundColor)
         }
     }
 }

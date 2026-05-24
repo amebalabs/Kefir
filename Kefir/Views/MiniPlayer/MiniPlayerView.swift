@@ -17,7 +17,7 @@ struct MiniPlayerView: View {
     var body: some View {
         ZStack {
             // Background with visual effect
-            VisualEffectBackground()
+            MiniPlayerBackground()
             
             // Content
             if appState.isConnected && appState.powerStatus == .powerOn {
@@ -329,6 +329,19 @@ struct MiniProgressBar: View {
     }
 }
 
+/// Floating mini-player backdrop. Liquid Glass on macOS 26; the prior
+/// `NSVisualEffectView` HUD material on earlier systems.
+struct MiniPlayerBackground: View {
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        } else {
+            VisualEffectBackground()
+        }
+    }
+}
+
 struct VisualEffectBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -339,7 +352,7 @@ struct VisualEffectBackground: NSViewRepresentable {
         view.layer?.cornerRadius = 12
         return view
     }
-    
+
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 

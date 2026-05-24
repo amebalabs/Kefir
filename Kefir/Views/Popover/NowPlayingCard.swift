@@ -90,14 +90,16 @@ struct NowPlayingCard: View {
             }
             
             // Playback controls
-            HStack(spacing: 32) {
-                PlayButton(icon: "backward.fill", size: .small, action: onPrevious)
-                PlayButton(
-                    icon: isPlaying ? "pause.fill" : "play.fill",
-                    size: .large,
-                    action: onPlayPause
-                )
-                PlayButton(icon: "forward.fill", size: .small, action: onNext)
+            GlassGroup(spacing: 32) {
+                HStack(spacing: 32) {
+                    PlayButton(icon: "backward.fill", size: .small, action: onPrevious)
+                    PlayButton(
+                        icon: isPlaying ? "pause.fill" : "play.fill",
+                        size: .large,
+                        action: onPlayPause
+                    )
+                    PlayButton(icon: "forward.fill", size: .small, action: onNext)
+                }
             }
             .frame(maxWidth: .infinity)
             // Volume control
@@ -128,6 +130,6 @@ struct NowPlayingCard: View {
             }
         }
         .padding(20)
-        .background(Color(NSColor.controlBackgroundColor))
+        .glassCard(cornerRadius: 0)
     }
 }
