@@ -21,6 +21,15 @@ enum Constants {
         
         /// HTTP read timeout in seconds
         static let httpReadTimeout = 10.0
+
+        /// How long to wait for the speaker to report `powerOn` after a
+        /// power-on request before giving up, in seconds. The speaker ACKs the
+        /// request immediately but takes time to physically wake.
+        static let powerOnTimeout = 30.0
+
+        /// How often to poll the speaker's status while waiting for it to wake,
+        /// in seconds.
+        static let powerOnPollInterval = 2.0
     }
     
     /// Volume constants
@@ -66,7 +75,7 @@ enum Constants {
         }()
         static let githubURL = "https://github.com/melonamin/kefir"
         static let issuesURL = "https://github.com/melonamin/kefir/issues"
-        static let copyright = "© 2025 Ameba Labs"
+        static let copyright = "© 2026 Ameba Labs"
     }
     
     /// System symbols

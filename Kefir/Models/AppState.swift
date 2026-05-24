@@ -376,13 +376,16 @@ class AppState: ObservableObject {
                 self.powerStatus = .standby
             }
         } else {
-            // Powering on is SLOW (the speaker hardware can take 15–30s to wake
-            // from standby and only ACKs the HTTP request once it is ready).
-            // Flip `isPoweringOn` immediately so the UI shows a spinner and
-            // the user knows the command was registered.
+            // Powering on is SLOW: the speaker ACKs the HTTP request almost
+            // immediately but then takes up to ~30s to physically wake and
+            // report `powerOn`. Flip `isPoweringOn` so the UI shows a spinner
+            // for the whole wake, and poll until the speaker confirms it is on
+            // instead of reading status once (which would still report
+            // `standby` and snap the UI straight back).
             isPoweringOn = true
             await error.performOperation(operation: "Power On") {
                 try await self.connection.powerOn()
+                try await self.waitForPowerOn()
                 // Speaker is now up. Refresh status and resume polling.
                 self.powerStatus = .powerOn
                 await self.updateStatus()
@@ -390,6 +393,22 @@ class AppState: ObservableObject {
             }
             isPoweringOn = false
         }
+    }
+
+    /// Polls the speaker after a power-on request until it reports `.powerOn`.
+    /// The speaker ACKs the request immediately but takes time to physically
+    /// wake, so reading status once right after would still return `.standby`.
+    /// Transient read errors during the wake are expected and tolerated; the
+    /// only hard failure is exceeding `powerOnTimeout`.
+    private func waitForPowerOn() async throws {
+        let deadline = Date().addingTimeInterval(Constants.Timing.powerOnTimeout)
+        while Date() < deadline {
+            if let status = try? await connection.getStatus(), status == .powerOn {
+                return
+            }
+            try await Task.sleep(nanoseconds: UInt64(Constants.Timing.powerOnPollInterval * 1_000_000_000))
+        }
+        throw SpeakerError.powerOnTimeout
     }
     
     func togglePlayPause() async {

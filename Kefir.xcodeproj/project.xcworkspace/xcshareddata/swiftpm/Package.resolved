@@ -186,8 +186,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/melonamin/SwiftKEF",
       "state" : {
-        "revision" : "1889db655d1992dfdea604f4f2a00396eab04f53",
-        "version" : "1.2.0"
+        "revision" : "deb8ef658e4519753b12df1a4c107a462246bbf2",
+        "version" : "1.3.0"
       }
     }
   ],

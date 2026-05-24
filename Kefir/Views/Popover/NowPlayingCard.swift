@@ -101,24 +101,30 @@ struct NowPlayingCard: View {
             }
             .frame(maxWidth: .infinity)
             // Volume control
-            HStack(spacing: 12) {
-                Image(systemName: "speaker.fill" )
-                    .font(.system(size: 14))
-                
-                ModernSlider(
-                    value: Binding(
-                        get: { Double(volume) },
-                        set: { onVolumeChange(Int($0)) }
-                    ),
-                    isDragging: $isDragging
-                )
-                Button(action: onMuteToggle) {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.3.fill")
+            VStack(spacing: 4) {
+                HStack(spacing: 12) {
+                    Image(systemName: "speaker.fill" )
                         .font(.system(size: 14))
-                        .foregroundColor(isMuted ? .accentColor : .secondary)
+
+                    ModernSlider(
+                        value: Binding(
+                            get: { Double(volume) },
+                            set: { onVolumeChange(Int($0)) }
+                        ),
+                        isDragging: $isDragging
+                    )
+                    Button(action: onMuteToggle) {
+                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.3.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(isMuted ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .focusable(false)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .focusable(false)
+                Text("\(volume)%")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(isDragging ? .accentColor : .secondary)
+                    .monospacedDigit()
             }
         }
         .padding(20)

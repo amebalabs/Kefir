@@ -173,7 +173,8 @@ enum SpeakerError: LocalizedError {
     case notConnected
     case connectionFailed(String)
     case operationFailed(String)
-    
+    case powerOnTimeout
+
     var errorDescription: String? {
         switch self {
         case .notConnected:
@@ -182,6 +183,8 @@ enum SpeakerError: LocalizedError {
             return String(format: NSLocalizedString("Connection failed: %@", comment: "Error when connection to speaker fails"), message)
         case .operationFailed(let message):
             return String(format: NSLocalizedString("Operation failed: %@", comment: "Error when speaker operation fails"), message)
+        case .powerOnTimeout:
+            return NSLocalizedString("The speaker did not finish powering on in time", comment: "Error when the speaker does not wake within the timeout")
         }
     }
 }
