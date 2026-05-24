@@ -3,6 +3,9 @@ import SwiftKEF
 import KeyboardShortcuts
 import AppKit
 import Combine
+import os
+
+private let log = Logger(subsystem: "co.ameba.Kefir", category: "AppState")
 
 /// Main application state that coordinates between specialized managers
 @MainActor
@@ -12,6 +15,9 @@ class AppState: ObservableObject {
     @Published var currentSpeaker: SpeakerProfile?
     @Published var isConnected = false
     @Published var powerStatus: KEFSpeakerStatus = .standby
+    /// True while a power-on request is in flight. KEF speakers can take
+    /// 15–30s to physically wake from standby, so we surface this in the UI.
+    @Published var isPoweringOn = false
     
     // MARK: - Managers
     let connection: SpeakerConnectionManager
@@ -32,6 +38,17 @@ class AppState: ObservableObject {
     
     // MARK: - Private Properties
     private var pollingTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+    /// Watchdog that detects when the polling stream has gone silent (e.g.,
+    /// because we lost network access and SwiftKEF's polling loop is
+    /// retrying internally without ever surfacing the error).
+    private var watchdogTask: Task<Void, Never>?
+    private var lastPollingEventDate = Date()
+    /// Maximum tolerated silence between polling events. The KEF polling
+    /// queue returns at least an empty event every `pollInterval` seconds
+    /// even when nothing is changing, so going much longer than that
+    /// without an event indicates the connection is broken.
+    private let pollingFreshnessTimeout: TimeInterval = 25
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
@@ -94,6 +111,8 @@ class AppState: ObservableObject {
     
     deinit {
         pollingTask?.cancel()
+        reconnectTask?.cancel()
+        watchdogTask?.cancel()
     }
     
     // MARK: - Configuration
@@ -107,29 +126,40 @@ class AppState: ObservableObject {
     
     // MARK: - Speaker Selection
     
-    func selectSpeaker(_ profile: SpeakerProfile) async {
+    /// - Parameter silent: When true, swallow errors and don't surface a dialog.
+    ///   Used by the background reconnect loop so transient blips don't spam alerts.
+    func selectSpeaker(_ profile: SpeakerProfile, silent: Bool = false) async {
+        log.info("selectSpeaker name=\(profile.name, privacy: .public) host=\(profile.host, privacy: .public) silent=\(silent)")
         currentSpeaker = profile
-        
-        // Stop current polling
+
+        // Stop current polling and watchdog. User-initiated selection should
+        // also cancel any pending reconnect. Silent reconnect attempts are
+        // made *from* reconnectTask, so cancelling it here would cancel the
+        // task that is currently executing and can spawn overlapping retries.
         pollingTask?.cancel()
-        
+        watchdogTask?.cancel()
+        if !silent {
+            reconnectTask?.cancel()
+            reconnectTask = nil
+        }
+
         do {
-            // Connect to new speaker
             try await connection.connect(to: profile)
             isConnected = connection.isConnected
             powerStatus = connection.powerStatus
-            
-            // Update initial status if connected
+            log.info("Connected. powerStatus=\(self.powerStatus.rawValue, privacy: .public)")
+
             if isConnected {
                 await updateStatus()
-                // Start polling after initial status update completes
-                Task {
-                    startPolling()
-                }
+                Task { startPolling() }
             }
         } catch {
-            self.error.showConnectionError(error)
+            log.error("connect() failed: \(error.localizedDescription, privacy: .public)")
             isConnected = false
+            if !silent {
+                self.error.showConnectionError(error)
+                scheduleReconnect()
+            }
         }
     }
     
@@ -164,54 +194,140 @@ class AppState: ObservableObject {
                 }
             }
         } catch {
-            // Connection lost
-            isConnected = false
-            
-            // Try to reconnect after delay
-            if !Task.isCancelled {
-                Task {
-                    try? await Task.sleep(nanoseconds: UInt64(Constants.Timing.connectionRetryDelay * 1_000_000_000))
-                    if currentSpeaker != nil && !isConnected {
-                        await updateStatus()
-                    }
-                }
-            }
+            log.warning("updateStatus failed: \(error.localizedDescription, privacy: .public). Verifying connection…")
+            await handleTransientFailure()
         }
     }
-    
+
+    // MARK: - Connection Health
+
+    /// Probes the speaker with a single getStatus() to decide whether a polling
+    /// or status-update error reflects a real connection loss or just a
+    /// transient blip. Restarts polling on success, drops to disconnected on
+    /// failure.
+    private func handleTransientFailure() async {
+        guard currentSpeaker != nil else { return }
+        do {
+            let status = try await connection.getStatus()
+            log.info("Health check passed (status=\(status.rawValue, privacy: .public)). Keeping connection alive.")
+            powerStatus = status
+            isConnected = true
+            // IMPORTANT: do NOT call updateStatus() here. updateStatus() is
+            // what got us into this catch path; recursing back into it can
+            // produce an unbounded loop if any sub-call (getVolume,
+            // getSource, getSongInformation, …) keeps failing.
+            // Polling will resync the rest of the state on its next tick.
+            Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if isConnected { startPolling() }
+            }
+        } catch {
+            log.error("Health check failed: \(error.localizedDescription, privacy: .public). Marking disconnected and scheduling reconnect.")
+            isConnected = false
+            scheduleReconnect()
+        }
+    }
+
+    // MARK: - Reconnect
+
+    /// Background loop that retries `selectSpeaker` with exponential backoff
+    /// (5s → 10s → 20s → 30s, capped) until the connection comes back or the
+    /// user picks a different speaker.
+    private func scheduleReconnect() {
+        guard reconnectTask == nil || reconnectTask?.isCancelled == true else {
+            // A reconnect is already running.
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self = self else { return }
+            var delay = Constants.Timing.connectionRetryDelay // 5s
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                if Task.isCancelled { break }
+
+                guard let speaker = self.currentSpeaker, !self.isConnected else { break }
+
+                await self.selectSpeaker(speaker, silent: true)
+                if self.isConnected { break }
+
+                delay = min(delay * 2, 30)
+            }
+            if self.reconnectTask?.isCancelled != true {
+                self.reconnectTask = nil
+            }
+        }
+        reconnectTask = task
+    }
+
     // MARK: - Polling
     
     private func startPolling() {
         pollingTask?.cancel()
-        
+        watchdogTask?.cancel()
+        lastPollingEventDate = Date()
+        startWatchdog()
+
         pollingTask = Task {
             guard let eventStream = await connection.startPolling(
                 pollInterval: Constants.Timing.defaultPollingInterval,
                 pollSongStatus: true
             ) else { return }
-            
+
             do {
                 for try await event in eventStream {
                     if Task.isCancelled { break }
-                    
-                    // Update connection status
+                    lastPollingEventDate = Date()
+
+                    // Detect a transition into powerOn so we can fetch the
+                    // current source/volume/etc. The KEF polling queue does
+                    // not always deliver an initial value for these paths.
+                    let previousStatus = powerStatus
                     if let status = event.speakerStatus {
                         powerStatus = status
                         isConnected = true
                     }
-                    
-                    // Update managers with event data
+                    let justPoweredOn = previousStatus != .powerOn && powerStatus == .powerOn
+
                     if powerStatus == .powerOn {
                         await MainActor.run {
                             volume.updateFromEvent(event)
                             source.updateFromEvent(event)
                             playback.updateFromEvent(event)
                         }
+                        if justPoweredOn {
+                            log.info("Speaker just powered on; refreshing source/volume.")
+                            await updateStatus()
+                        }
                     }
                 }
             } catch {
                 if !Task.isCancelled {
-                    isConnected = false
+                    log.warning("Polling stream ended with error: \(error.localizedDescription, privacy: .public)")
+                    await handleTransientFailure()
+                }
+            }
+        }
+    }
+
+    /// Detects when the polling stream goes silent without surfacing an error.
+    /// SwiftKEF's `startPolling` retries network errors internally with a 2s
+    /// backoff and never finishes the stream — so when the Mac leaves the
+    /// LAN, our `for try await event in eventStream` loop just sits there
+    /// waiting forever and `isConnected` stays true. The watchdog forces a
+    /// health check after `pollingFreshnessTimeout` seconds of silence.
+    private func startWatchdog() {
+        watchdogTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // poll every 5s
+                if Task.isCancelled { return }
+                guard let self = self, self.isConnected else { continue }
+                let silence = Date().timeIntervalSince(self.lastPollingEventDate)
+                if silence > self.pollingFreshnessTimeout {
+                    log.warning("Watchdog: polling silent for \(Int(silence))s. Health-checking.")
+                    await self.handleTransientFailure()
+                    // handleTransientFailure either restarts polling (which
+                    // will start a fresh watchdog) or marks us disconnected.
+                    return
                 }
             }
         }
@@ -253,16 +369,26 @@ class AppState: ObservableObject {
     }
     
     func togglePower() async {
-        await error.performOperation(operation: "Toggle Power") {
-            if powerStatus == .powerOn {
-                try await connection.shutdown()
-                powerStatus = .standby
-            } else {
-                try await connection.powerOn()
-                powerStatus = .powerOn
-                // Re-start polling after power on
-                Task { startPolling() }
+        if powerStatus == .powerOn {
+            // Powering off is fast; just await it.
+            await error.performOperation(operation: "Toggle Power") {
+                try await self.connection.shutdown()
+                self.powerStatus = .standby
             }
+        } else {
+            // Powering on is SLOW (the speaker hardware can take 15–30s to wake
+            // from standby and only ACKs the HTTP request once it is ready).
+            // Flip `isPoweringOn` immediately so the UI shows a spinner and
+            // the user knows the command was registered.
+            isPoweringOn = true
+            await error.performOperation(operation: "Power On") {
+                try await self.connection.powerOn()
+                // Speaker is now up. Refresh status and resume polling.
+                self.powerStatus = .powerOn
+                await self.updateStatus()
+                Task { self.startPolling() }
+            }
+            isPoweringOn = false
         }
     }
     
@@ -344,6 +470,8 @@ class AppState: ObservableObject {
     
     func cleanup() async {
         pollingTask?.cancel()
+        reconnectTask?.cancel()
+        watchdogTask?.cancel()
         await connection.disconnect()
     }
     
