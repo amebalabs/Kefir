@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftKEF
 
 struct NowPlayingCard: View {
+    @State private var dragVolume: Int?
     let track: SongInfo?
     let isPlaying: Bool
     let trackPosition: Int64
@@ -113,7 +114,8 @@ struct NowPlayingCard: View {
                             get: { Double(volume) },
                             set: { onVolumeChange(Int($0)) }
                         ),
-                        isDragging: $isDragging
+                        isDragging: $isDragging,
+                        onDragValueChange: { dragVolume = $0.map { Int($0.rounded()) } }
                     )
                     Button(action: onMuteToggle) {
                         Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.3.fill")
@@ -123,7 +125,7 @@ struct NowPlayingCard: View {
                     .buttonStyle(PlainButtonStyle())
                     .focusable(false)
                 }
-                Text("\(volume)%")
+                Text("\(dragVolume ?? volume)%")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(isDragging ? .accentColor : .secondary)
                     .monospacedDigit()

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct VolumeCard: View {
+    @State private var dragVolume: Int?
     @Binding var volume: Int
     @Binding var isMuted: Bool
     @Binding var isDragging: Bool
@@ -18,7 +19,7 @@ struct VolumeCard: View {
                 Text("Volume")
                     .font(.system(size: 15, weight: .medium))
                 Spacer()
-                Text("\(volume)%")
+                Text("\(dragVolume ?? volume)%")
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundColor(isDragging ? .accentColor : .primary)
             }
@@ -29,7 +30,8 @@ struct VolumeCard: View {
                     get: { Double(volume) },
                     set: { onVolumeChange(Int($0)) }
                 ),
-                isDragging: $isDragging
+                isDragging: $isDragging,
+                onDragValueChange: { dragVolume = $0.map { Int($0.rounded()) } }
             )
             
             // Buttons
