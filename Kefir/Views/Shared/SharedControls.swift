@@ -66,6 +66,7 @@ struct GlassGroup<Content: View>: View {
 struct ModernSlider: View {
     @Binding var value: Double
     @Binding var isDragging: Bool
+    var onDragValueChange: (Double?) -> Void = { _ in }
 
     /// Local "in-flight" value while the user is dragging. We avoid writing to
     /// the binding on every drag delta because the binding's setter triggers an
@@ -80,11 +81,18 @@ struct ModernSlider: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // Reserve room for the thumb at both ends, including its drag scale.
+            let thumbRadius = min(12.1, geometry.size.width / 2)
+            let usableWidth = max(0, geometry.size.width - thumbRadius * 2)
+            let valueFraction = CGFloat(displayValue / 100)
+            let thumbCenterX = thumbRadius + usableWidth * valueFraction
+
             ZStack(alignment: .leading) {
                 // Track
                 Capsule()
                     .fill(Color(NSColor.separatorColor).opacity(0.3))
-                    .frame(height: 6)
+                    .frame(width: usableWidth, height: 6)
+                    .offset(x: thumbRadius)
 
                 // Fill
                 Capsule()
@@ -95,7 +103,8 @@ struct ModernSlider: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: geometry.size.width * CGFloat(displayValue / 100), height: 6)
+                    .frame(width: usableWidth * valueFraction, height: 6)
+                    .offset(x: thumbRadius)
 
                 // Thumb
                 Circle()
@@ -107,7 +116,7 @@ struct ModernSlider: View {
                             .fill(Color.accentColor)
                             .frame(width: 8, height: 8)
                     )
-                    .offset(x: geometry.size.width * CGFloat(displayValue / 100) - 11)
+                    .position(x: thumbCenterX, y: geometry.size.height / 2)
                     .scaleEffect(isDragging ? 1.1 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDragging)
             }
@@ -116,9 +125,15 @@ struct ModernSlider: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { drag in
                         isDragging = true
-                        let newValue = min(100, max(0, Double(drag.location.x / geometry.size.width) * 100))
+                        let newValue: Double
+                        if usableWidth > 0 {
+                            newValue = min(100, max(0, Double((drag.location.x - thumbRadius) / usableWidth) * 100))
+                        } else {
+                            newValue = 0
+                        }
                         // Only update local state during drag — no HTTP call yet.
                         dragValue = newValue
+                        onDragValueChange(newValue)
                     }
                     .onEnded { _ in
                         if let final = dragValue {
@@ -135,12 +150,14 @@ struct ModernSlider: View {
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 800_000_000)
                             dragValue = nil
+                            onDragValueChange(nil)
                         }
                     }
             )
             .onChange(of: value) { _, newValue in
                 if let dv = dragValue, abs(dv - newValue) < 1.0 {
                     dragValue = nil
+                    onDragValueChange(nil)
                 }
             }
         }
